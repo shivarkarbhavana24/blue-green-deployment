@@ -5,7 +5,7 @@ pipeline {
 
         stage('Pull Code') {
             steps {
-                git 'https://github.com/shivarkarbhavana24/blue-green-deployment.git'
+                git branch: 'main', url: 'https://github.com/shivarkarbhavana24/blue-green-deployment.git'
             }
         }
 
