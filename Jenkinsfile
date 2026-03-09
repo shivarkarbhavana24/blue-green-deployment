@@ -12,23 +12,25 @@ pipeline {
         stage('Deploy to Green') {
             steps {
                 sh '''
-                scp -o StrictHostKeyChecking=no index.html ubuntu@GREEN-IP:/var/www/html/
+                scp -o StrictHostKeyChecking=no index.html ubuntu@54.198.90.69:/var/www/html/
                 '''
             }
         }
 
         stage('Health Check') {
             steps {
-                sh 'curl -f http://GREEN-IP'
+                sh '''
+                curl -f http://54.198.90.69
+                '''
             }
         }
 
-        stage('Switch Traffic') {
+        stage('Switch Traffic to Green') {
             steps {
                 sh '''
                 aws elbv2 modify-listener \
-                --listener-arn LISTENER-ARN \
-                --default-actions Type=forward,TargetGroupArn=GREEN-TG-ARN
+                --listener-arn arn:aws:elasticloadbalancing:us-east-1:246816819870:listener/app/BlueGreen-ALB/a7fbdf4879e40f40/981e0ff257f3a38b \
+                --default-actions Type=forward,TargetGroupArn=arn:aws:elasticloadbalancing:us-east-1:246816819870:targetgroup/Green-TG/7610e67f973b0ec4
                 '''
             }
         }
@@ -36,11 +38,13 @@ pipeline {
 
     post {
         failure {
-            sh '''
-            aws elbv2 modify-listener \
-            --listener-arn LISTENER-ARN \
-            --default-actions Type=forward,TargetGroupArn=BLUE-TG-ARN
-            '''
+            steps {
+                sh '''
+                aws elbv2 modify-listener \
+                --listener-arn arn:aws:elasticloadbalancing:us-east-1:246816819870:listener/app/BlueGreen-ALB/a7fbdf4879e40f40/981e0ff257f3a38b \
+                --default-actions Type=forward,TargetGroupArn=arn:aws:elasticloadbalancing:us-east-1:246816819870:targetgroup/Blue-TG/5267a746109b3117
+                '''
+            }
         }
     }
 }
