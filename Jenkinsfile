@@ -5,7 +5,7 @@ pipeline {
 
         stage('Pull Code') {
             steps {
-                git 'https://github.com/yourrepo/app.git'
+                git 'https://github.com/shivarkarbhavana24/blue-green-deployment.git'
             }
         }
 
@@ -36,13 +36,11 @@ pipeline {
 
     post {
         failure {
-            steps {
-                sh '''
-                aws elbv2 modify-listener \
-                --listener-arn LISTENER-ARN \
-                --default-actions Type=forward,TargetGroupArn=BLUE-TG-ARN
-                '''
-            }
+            sh '''
+            aws elbv2 modify-listener \
+            --listener-arn LISTENER-ARN \
+            --default-actions Type=forward,TargetGroupArn=BLUE-TG-ARN
+            '''
         }
     }
 }
