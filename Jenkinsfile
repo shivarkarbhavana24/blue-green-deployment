@@ -12,7 +12,7 @@ pipeline {
         stage('Deploy to Green') {
             steps {
                 sh '''
-                scp -i /home/ubuntu/bluekey.pem -o StrictHostKeyChecking=no index.html ubuntu@54.198.90.69:/var/www/html/
+                scp -i /var/lib/jenkins/bluekey.pem -o StrictHostKeyChecking=no index.html ubuntu@54.198.90.69:/var/www/html/
                 '''
             }
         }
