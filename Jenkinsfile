@@ -1,49 +1,55 @@
 pipeline {
     agent any
-
+    environment {
+        BLUE_TG = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/Blue-TG/abc123"
+        GREEN_TG = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/Green-TG/def456"
+        ALB_LISTENER = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/BlueGreen-ALB/xyz987"
+    }
     stages {
-
-        stage('Pull Code') {
+        stage('Deploy to Inactive') {
             steps {
-                git branch: 'main', url: 'https://github.com/shivarkarbhavana24/blue-green-deployment.git'
+                script {
+                    // Determine inactive environment
+                    def activeTG = sh(script: "aws elbv2 describe-listeners --listener-arn $ALB_LISTENER --query 'Listeners[0].DefaultActions[0].TargetGroupArn' --output text", returnStdout: true).trim()
+                    def inactiveTG = activeTG == BLUE_TG ? GREEN_TG : BLUE_TG
+
+                    echo "Deploying to inactive environment: ${inactiveTG}"
+                    sh """
+                        scp -i ~/.ssh/key.pem -o StrictHostKeyChecking=no index.html ubuntu@<inactive-instance-ip>:/var/www/html/
+                    """
+                }
             }
         }
-
-        stage('Deploy to Green') {
-            steps {
-                sh '''
-                scp -i /var/lib/jenkins/bluekey.pem -o StrictHostKeyChecking=no index.html ubuntu@54.146.21.4:/var/www/html/
-                '''
-            }
-        }
-
         stage('Health Check') {
             steps {
-                sh '''
-                curl -f http://54.146.21.4
-                '''
+                script {
+                    def status = sh(script: "curl -f http://<inactive-instance-ip>", returnStatus: true)
+                    if (status != 0) {
+                        error "Health check failed!"
+                    }
+                }
             }
         }
-
-        stage('Switch Traffic to Green') {
+        stage('Switch Traffic') {
             steps {
-                sh '''
-                aws elbv2 modify-listener \
-                --listener-arn arn:aws:elasticloadbalancing:us-east-1:246816819870:listener/app/BlueGreen-ALB/a7fbdf4879e40f40/981e0ff257f3a38b \
-                --default-actions Type=forward,TargetGroupArn=arn:aws:elasticloadbalancing:us-east-1:246816819870:targetgroup/Green-TG/7610e67f973b0ec4
-                '''
+                script {
+                    sh """
+                        aws elbv2 modify-listener --listener-arn $ALB_LISTENER --default-actions Type=forward,TargetGroupArn=$inactiveTG
+                    """
+                    echo "Traffic switched to inactive environment"
+                }
             }
         }
-
     }
-
     post {
         failure {
-            sh '''
-            aws elbv2 modify-listener \
-            --listener-arn arn:aws:elasticloadbalancing:us-east-1:246816819870:listener/app/BlueGreen-ALB/a7fbdf4879e40f40/981e0ff257f3a38b \
-            --default-actions Type=forward,TargetGroupArn=arn:aws:elasticloadbalancing:us-east-1:246816819870:targetgroup/Blue-TG/5267a746109b3117
-            '''
+            script {
+                // Rollback traffic to previous environment
+                sh """
+                    aws elbv2 modify-listener --listener-arn $ALB_LISTENER --default-actions Type=forward,TargetGroupArn=$activeTG
+                """
+                echo "Rollback executed: Traffic reverted to previous environment"
+            }
         }
     }
 }
