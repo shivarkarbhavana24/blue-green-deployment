@@ -1,24 +1,37 @@
 pipeline {
     agent any
     environment {
+        // Target Groups
         BLUE_TG = "arn:aws:elasticloadbalancing:us-east-1:246816819870:targetgroup/Blue-TG/5267a746109b3117"
         GREEN_TG = "arn:aws:elasticloadbalancing:us-east-1:246816819870:targetgroup/Green-TG/7610e67f973b0ec4"
+
+        // ALB Listener
         ALB_LISTENER = "arn:aws:elasticloadbalancing:us-east-1:246816819870:listener/app/BlueGreen-ALB/a7fbdf4879e40f40/981e0ff257f3a38b"
-        ACTIVE_TG = "${BLUE_TG}"  // initial active TG
+
+        // EC2 Instances
+        BLUE_INSTANCE = "54.235.16.236"
+        GREEN_INSTANCE = "54.146.21.4"
+
+        // Initial Active TG (Blue)
+        ACTIVE_TG = "${BLUE_TG}"
     }
+
     stages {
         stage('Deploy to Inactive') {
             steps {
                 script {
-                    // Determine inactive TG
+                    // Determine inactive environment
                     def inactiveTG = (ACTIVE_TG == BLUE_TG) ? GREEN_TG : BLUE_TG
-                    echo "Deploying to inactive environment: ${inactiveTG}"
-                    
-                    // Deploy code via SCP to inactive instance
-                    sh "scp -i ~/.ssh/bluekey.pem -o StrictHostKeyChecking=no index.html ubuntu@<inactive-instance-ip>:/var/www/html/"
+                    def inactiveIP = (inactiveTG == BLUE_TG) ? BLUE_INSTANCE : GREEN_INSTANCE
+
+                    echo "Deploying to inactive environment: ${inactiveTG} (${inactiveIP})"
+
+                    // Deploy code
+                    sh "scp -i ~/.ssh/bluekey.pem -o StrictHostKeyChecking=no index.html ubuntu@${inactiveIP}:/var/www/html/"
 
                     // Save inactive TG for traffic switch
                     env.INACTIVE_TG = inactiveTG
+                    env.INACTIVE_IP = inactiveIP
                 }
             }
         }
@@ -26,7 +39,7 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    def status = sh(script: "curl -f http://<inactive-instance-ip>", returnStatus: true)
+                    def status = sh(script: "curl -f http://${env.INACTIVE_IP}", returnStatus: true)
                     if (status != 0) {
                         error "Health check failed!"
                     }
@@ -42,8 +55,8 @@ pipeline {
                         --default-actions Type=forward,TargetGroupArn=$INACTIVE_TG
                     """
                     echo "Traffic switched to inactive environment"
-                    
-                    // Update ACTIVE_TG after switch
+
+                    // Update ACTIVE_TG after successful switch
                     env.ACTIVE_TG = env.INACTIVE_TG
                 }
             }
